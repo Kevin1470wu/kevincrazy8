@@ -86,6 +86,11 @@ export default function App() {
   const [game, setGame] = useState<GameState | null>(null);
   const [message, setMessage] = useState<string>("欢迎来到 Tina 的疯狂 8 点！");
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const gameRef = React.useRef<GameState | null>(null);
+
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
 
   const initGame = useCallback(() => {
     const fullDeck = shuffle(createDeck());
@@ -203,22 +208,28 @@ export default function App() {
     setMessage(`你摸到了一张 ${SUIT_NAMES_ZH[drawnCard.suit]} ${drawnCard.rank}。`);
   };
 
-  // AI Turn Logic
+  // AI Turn Trigger
   useEffect(() => {
     if (game?.currentTurn === 'ai' && game.status === 'playing' && !isAiThinking) {
       setIsAiThinking(true);
-      
+    }
+  }, [game?.currentTurn, game?.status, isAiThinking]);
+
+  // AI Turn Execution
+  useEffect(() => {
+    if (isAiThinking && gameRef.current) {
+      const currentGame = gameRef.current;
       const timer = setTimeout(() => {
-        const topCard = game.discardPile[game.discardPile.length - 1];
-        const playableCards = game.aiHand.filter(c => isPlayable(c, topCard, game.activeSuit));
+        const topCard = currentGame.discardPile[currentGame.discardPile.length - 1];
+        const playableCards = currentGame.aiHand.filter(c => isPlayable(c, topCard, currentGame.activeSuit));
 
         if (playableCards.length > 0) {
           // AI strategy: play non-8 if possible, otherwise play 8
           const nonEight = playableCards.find(c => c.rank !== Rank.EIGHT);
           const cardToPlay = nonEight || playableCards[0];
 
-          const newAiHand = game.aiHand.filter(c => c.id !== cardToPlay.id);
-          const newDiscardPile = [...game.discardPile, cardToPlay];
+          const newAiHand = currentGame.aiHand.filter(c => c.id !== cardToPlay.id);
+          const newDiscardPile = [...currentGame.discardPile, cardToPlay];
 
           if (cardToPlay.rank === Rank.EIGHT) {
             // AI chooses most frequent suit in its hand
@@ -229,7 +240,15 @@ export default function App() {
             
             const bestSuit = (Object.keys(suitCounts) as Suit[]).sort((a, b) => suitCounts[b] - suitCounts[a])[0] || Suit.HEARTS;
 
-            if (checkWin(newAiHand, 'ai')) {
+            if (newAiHand.length === 0) {
+              setGame(prev => prev ? {
+                ...prev,
+                aiHand: newAiHand,
+                discardPile: newDiscardPile,
+                status: 'lost',
+                winner: 'ai',
+              } : null);
+              setMessage("AI 赢了。再试一次吧！");
               setIsAiThinking(false);
               return;
             }
@@ -243,7 +262,15 @@ export default function App() {
             } : null);
             setMessage(`AI 打出了 8 并选择了 ${SUIT_NAMES_ZH[bestSuit]}。轮到你了！`);
           } else {
-            if (checkWin(newAiHand, 'ai')) {
+            if (newAiHand.length === 0) {
+              setGame(prev => prev ? {
+                ...prev,
+                aiHand: newAiHand,
+                discardPile: newDiscardPile,
+                status: 'lost',
+                winner: 'ai',
+              } : null);
+              setMessage("AI 赢了。再试一次吧！");
               setIsAiThinking(false);
               return;
             }
@@ -259,16 +286,16 @@ export default function App() {
           }
         } else {
           // Draw
-          if (game.deck.length > 0) {
-            const newDeck = [...game.deck];
+          if (currentGame.deck.length > 0) {
+            const newDeck = [...currentGame.deck];
             const drawnCard = newDeck.pop()!;
-            const newAiHand = [...game.aiHand, drawnCard];
+            const newAiHand = [...currentGame.aiHand, drawnCard];
             
             // Check if drawn card is playable
-            if (isPlayable(drawnCard, topCard, game.activeSuit)) {
+            if (isPlayable(drawnCard, topCard, currentGame.activeSuit)) {
               // AI plays it immediately for simplicity
               const finalHand = newAiHand.filter(c => c.id !== drawnCard.id);
-              const finalDiscard = [...game.discardPile, drawnCard];
+              const finalDiscard = [...currentGame.discardPile, drawnCard];
               
               if (drawnCard.rank === Rank.EIGHT) {
                 const suitCounts = finalHand.reduce((acc, c) => {
@@ -316,7 +343,7 @@ export default function App() {
 
       return () => clearTimeout(timer);
     }
-  }, [game, isAiThinking]);
+  }, [isAiThinking]);
 
   if (!game || game.status === 'menu') {
     return (
